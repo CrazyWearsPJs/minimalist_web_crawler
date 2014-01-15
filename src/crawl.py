@@ -1,49 +1,68 @@
 from page import Page
+from collections import namedtuple
+import heapq
+import itertools
 
+"""
+A tuple which contains
+priority: the priority of the set of links in the pq (not unique)
+id: the unique id of the set of links, used for tiebreakers
+links: set of links
+"""
+
+Links = namedtuple('Links', ['priority', 'id', 'links'])
 def crawl_web(seed, max_depth = 10, max_pages = 1000):
-	to_crawl, crawled = {seed}, set()
-	index, graph = {}, {}
+	crawled = set()
+	crawl_queue =  [] # priority queue ensures that more "shallow" links are handled first
+	index = {}
+	graph = {}
+	counter = itertools.count()
 
-	def crawl(url, depth):
-		if hasattr(crawl, 'pages'):
-			crawl.pages += 1
-		else:
-			crawl.pages = 1
+	"""
+	Add set of links to queue of sets, crawled_queue.
+	Makes sure links is not in the set of already crawled urls.
+	"""
+	def add_links(links, depth = 0):
+		count = next(counter)
+		new_links = links.difference(crawled)
+		entry = Links(priority = depth, id = count, links = new_links)
+		heapq.heappush(crawl_queue, entry)
 
-		if crawl.pages >= max_pages or depth >= max_depth or url in crawled or not url:
-			crawl.pages -= 1
-			return
-
-		crawled.add(url)
-		page = Page(url)
-		if not page.is_valid():
-			return
-		index_page(index, page)
-		graph[url] = page.links
-		outgoing_links = page.links
-		while outgoing_links or to_crawl:
-			if outgoing_links:
-				next_url = outgoing_links.pop()
-				next_depth = depth + 1
+	"""
+	Adds all of the words in page.content to the index of words
+	to sets of urls
+	"""
+	def index_page(page):
+		words = page.content.split()
+		for word in words:
+			if word in index:
+				index[word.lower()].add(page.url)
 			else:
-				next_url = to_crawl.pop()
-				next_depth = depth
+				index[word.lower()] = {page.url}
 
-			to_crawl.update(outgoing_links)
-			crawl(next_url, next_depth)
+	add_links({seed}, 0)
+	pages = 0
+	while crawl_queue:
+		entry = heapq.heappop(crawl_queue)
+		to_crawl = entry.links
+		depth = entry.priority
+		while to_crawl and pages < max_pages:
+			url = to_crawl.pop()
+			page = Page(url)
+			if page.is_valid() and not url in crawled:
+				print url, depth
+				pages += 1
+				crawled.add(url)
+				index_page(page)
+				graph[url] = page.outgoing_links
+				if depth < max_depth:
+					add_links(page.outgoing_links, depth + 1)
+	return index, graph
 
-	crawl(seed, 0)
-	return (index, graph)
-
-def index_page(index, page):
-	words = page.content.split()
-	for word in words:
-		if word in index:
-			index[word].add(page.url)
-		else:
-			index[word] = {page.url}
-
-# Page Rank Algorithm where d is the damping constant
+"""
+Page Rank Algorithm where d is the damping constant, and the
+calculates p_k_rank for each p in graph, where k is max_iterations
+"""
 def page_rank(graph, d = 0.8, max_iterations = 10):
 	graph_size = len(graph)
 	ranks = {}
